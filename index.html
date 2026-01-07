@@ -74,7 +74,6 @@ const playersDiv=$("players");
 
 let players=[],queue=[],phase="",night={},votes={},selected=null,actor=null;
 let remain=0,dayTimer=null,lastExecuted=null;
-let dayVotesCount=0;
 
 /* 名前 */
 function updateNames(){
@@ -89,7 +88,7 @@ function updateNames(){
 pc.oninput=()=>{updateNames();updateVillagers();}
 updateNames();
 
-/* 村人 */
+/* 村人計算 */
 function updateVillagers(){
  let used=+wolf.value+ +seer.value+ +medium.value+ +knight.value+ +dancer.value+(adv.checked?+fox.value:0);
  let v=pc.value-used;
@@ -155,9 +154,8 @@ function render(sel){
 function startDay(){
  phase="昼";
  votes={};
- dayVotesCount=0;
  game.classList.remove("hidden");
- phaseEl.textContent="昼（多数決投票）";
+ phaseEl.textContent="昼（処刑投票）";
  info.textContent="処刑する人を選択";
  selected=null;
  render(true);
@@ -173,15 +171,12 @@ function startTimer(){
  },1000);
 }
 function confirm(){
- if(selected==null) return;
+ if(selected==null)return;
 
  if(phase==="昼"){
   votes[selected]=(votes[selected]||0)+1;
-  dayVotesCount++;
-  if(dayVotesCount>=players.filter(p=>p.alive).length){
-   clearInterval(dayTimer);
-   finishVote();
-  }
+  clearInterval(dayTimer);
+  finishVote(); // ★必ず処刑
  }else{
   night[actor.role]??={};
   night[actor.role][actor.id]=selected;
@@ -206,7 +201,7 @@ function finishVote(){
 
 /* 夜 */
 function startNight(){
- clearInterval(dayTimer);timer.textContent="";
+ timer.textContent="";
  phase="夜";night={};queue=[];
  players.filter(p=>p.alive&&["人狼","占い師","霊能者","騎士"].includes(p.role))
   .forEach(p=>queue.push(()=>nightAct(p)));
