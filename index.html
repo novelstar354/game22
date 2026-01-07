@@ -5,50 +5,17 @@
 <title>人狼ゲーム 完全版</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body{
-  margin:0;
-  background:#0f172a;
-  color:#fff;
-  font-family:sans-serif;
-  text-align:center;
-}
-.card{
-  background:#1e293b;
-  margin:10px auto;
-  padding:15px;
-  border-radius:14px;
-  max-width:420px;
-}
+body{margin:0;background:#0f172a;color:#fff;font-family:sans-serif;text-align:center}
+.card{background:#1e293b;margin:10px auto;padding:15px;border-radius:14px;max-width:420px}
 .hidden{display:none}
-button{
-  width:90%;
-  max-width:300px;
-  padding:14px;
-  font-size:17px;
-  border:none;
-  border-radius:14px;
-  background:#22c55e;
-  color:#000;
-  margin:8px auto;
-}
-button:disabled{
-  background:#475569;
-  color:#aaa;
-}
-input{
-  width:80px;
-  font-size:16px;
-}
-.player{
-  background:#334155;
-  margin:6px auto;
-  padding:10px;
-  border-radius:10px;
-  max-width:300px;
-}
+button{width:90%;max-width:300px;padding:14px;font-size:17px;border:none;border-radius:14px;background:#22c55e;color:#000;margin:8px auto}
+button:disabled{background:#475569;color:#aaa}
+input{font-size:16px;padding:6px;border-radius:6px;border:none}
+.player{background:#334155;margin:6px auto;padding:10px;border-radius:10px;max-width:300px}
 .dead{opacity:.4;text-decoration:line-through}
 .select{outline:3px solid #22c55e}
 .warning{color:#f87171;font-weight:bold}
+.timer{font-size:22px;font-weight:bold;color:#facc15}
 </style>
 </head>
 <body>
@@ -62,39 +29,38 @@ input{
 人数<br>
 <input id="pc" type="number" value="8" min="3"><br><br>
 
-昼制限（秒）<br>
+昼の制限時間（秒）<br>
 <input id="dayLimit" type="number" value="60"><br><br>
-
-<label>
-<input type="checkbox" id="adv"
- onchange="advBox.classList.toggle('hidden',!this.checked);updateVillagers()">
-上級役職ON
-</label>
-
-<hr>
 
 🐺 人狼 <input id="wolf" type="number" value="1"><br>
 🔮 占い師 <input id="seer" type="number" value="1"><br>
+📿 霊能者 <input id="medium" type="number" value="1"><br>
 🛡 騎士 <input id="knight" type="number" value="1"><br>
 💃 踊り子 <input id="dancer" type="number" value="1"><br>
 
+<label>
+<input type="checkbox" id="adv" onchange="advBox.classList.toggle('hidden',!this.checked);updateVillagers()">
+上級役職ON
+</label>
 <div id="advBox" class="hidden">
 🦊 妖狐 <input id="fox" type="number" value="0"><br>
 </div>
 
 <hr>
-<div id="villagerCount">👤 村人：0 人（自動）</div>
-<div id="warn" class="warning hidden">⚠ 役職数が人数を超えています</div>
 
-<br>
+<h3>プレイヤー名</h3>
+<div id="nameInputs"></div>
+
+<div id="villagerCount"></div>
+<div id="warn" class="warning hidden">⚠ 役職数が人数を超えています</div>
 <button id="startBtn" onclick="start()">開始</button>
 </div>
 
-<!-- 本人確認 -->
+<!-- 確認 -->
 <div id="confirmBox" class="card hidden">
 <h2 id="confirmText"></h2>
 <button onclick="confirmYes()">はい</button>
-<button onclick="confirmNo()">いいえ</button>
+<button onclick="alert('正しい人に渡してください')">いいえ</button>
 </div>
 
 <!-- 個別表示 -->
@@ -107,6 +73,7 @@ input{
 <!-- ゲーム -->
 <div id="game" class="card hidden">
 <h2 id="phaseEl"></h2>
+<div class="timer" id="timer"></div>
 <p id="info"></p>
 <div id="players"></div>
 <button onclick="confirm()">決定</button>
@@ -119,154 +86,199 @@ input{
 </div>
 
 <script>
-let players=[],phase="",queue=[],currentAction=null;
-let votes={},night={},protectedId=null,selected=null;
+let players=[],queue=[],phase="",night={},votes={},selected=null,actor=null;
+let dayTimer=null,remain=0,lastExecuted=null;
+const $=id=>document.getElementById(id);
 
-const playersDiv=document.getElementById("players");
-
-/* ===== 村人自動計算 & 超過チェック ===== */
-function updateVillagers(){
- let total=+pc.value;
- let used=
-  +wolf.value+
-  +seer.value+
-  +knight.value+
-  +dancer.value+
-  (adv.checked?+fox.value:0);
-
- let villagers=total-used;
- villagerCount.textContent=
-  `👤 村人：${Math.max(0,villagers)} 人（自動）`;
-
- if(villagers<0){
-  warn.classList.remove("hidden");
-  startBtn.disabled=true;
- }else{
-  warn.classList.add("hidden");
-  startBtn.disabled=false;
+/* ===== 名前 ===== */
+function updateNames(){
+ nameInputs.innerHTML="";
+ for(let i=0;i<pc.value;i++){
+  let inp=document.createElement("input");
+  inp.placeholder="P"+(i+1);
+  inp.style.margin="4px";
+  nameInputs.appendChild(inp);
  }
 }
+pc.oninput=()=>{updateNames();updateVillagers();}
+updateNames();
 
-document.querySelectorAll("#setup input").forEach(i=>{
- i.addEventListener("input",updateVillagers);
-});
+/* ===== 村人計算 ===== */
+function updateVillagers(){
+ let used=+wolf.value+ +seer.value+ +medium.value+ +knight.value+ +dancer.value+(adv.checked?+fox.value:0);
+ let v=pc.value-used;
+ villagerCount.textContent=`👤 村人：${Math.max(0,v)} 人`;
+ warn.classList.toggle("hidden",v>=0);
+ startBtn.disabled=v<0;
+}
+document.querySelectorAll("#setup input").forEach(i=>i.oninput=updateVillagers);
 updateVillagers();
 
 /* ===== 開始 ===== */
 function start(){
- let roles=[],n=+pc.value;
- const add=(id,r)=>{for(let i=0;i<+document.getElementById(id).value;i++)roles.push(r);}
- add("wolf","人狼");add("seer","占い師");add("knight","騎士");add("dancer","踊り子");
+ let names=[...nameInputs.children].map((i,n)=>i.value||"P"+(n+1));
+ let roles=[];
+ const add=(id,r)=>{for(let i=0;i<$(id).value;i++)roles.push(r);}
+ add("wolf","人狼");
+ add("seer","占い師");
+ add("medium","霊能者");
+ add("knight","騎士");
+ add("dancer","踊り子");
  if(adv.checked)add("fox","妖狐");
- while(roles.length<n)roles.push("村人");
+ while(roles.length<pc.value)roles.push("村人");
  roles.sort(()=>Math.random()-.5);
- players=roles.map((r,i)=>({id:i,name:"P"+(i+1),role:r,alive:true,used:false}));
+ players=roles.map((r,i)=>({id:i,name:names[i],role:r,alive:true,used:false}));
  setup.classList.add("hidden");
- queue=[];
- players.forEach(p=>queue.push(()=>showPrivate(p,"あなたの役職",p.role)));
- nextQueue();
+ queue=[...players.map(p=>()=>showPrivate(p,"あなたの役職",p.role)),startDay];
+ next();
 }
 
 /* ===== 共通 ===== */
 function showConfirm(t,yes){
  confirmText.textContent=t;
  confirmBox.classList.remove("hidden");
- currentAction=yes;
+ confirmYes=()=>{confirmBox.classList.add("hidden");yes();};
 }
-function confirmYes(){confirmBox.classList.add("hidden");currentAction();}
-function confirmNo(){alert("正しい人に渡してください");}
-
-function showPrivate(p,title,content){
+function showPrivate(p,t,c){
  showConfirm(`あなたは ${p.name} ですか？`,()=>{
-  privateTitle.textContent=title;
-  privateContent.textContent=content;
+  privateTitle.textContent=t;
+  privateContent.textContent=c;
   privateBox.classList.remove("hidden");
-  currentAction=()=>{privateBox.classList.add("hidden");nextQueue();}
+  actor=p;
  });
 }
-function privateOK(){currentAction();}
-function nextQueue(){queue.length?queue.shift()():startDay();}
-
-/* ===== 昼 ===== */
-function startDay(){
- game.classList.remove("hidden");
- phase="昼";
- phaseEl.textContent="昼（投票）";
- info.textContent="処刑する人を選択";
- selected=null;
- render(true);
-}
-
-/* ===== 夜 ===== */
-function startNight(){
- phase="夜";
- phaseEl.textContent="夜";
- night={};protectedId=null;
- queue=[];
- players.filter(p=>p.alive).forEach(p=>{
-  if(["人狼","占い師","騎士"].includes(p.role))
-   queue.push(()=>nightAction(p));
- });
- nextQueue();
-}
-
-function nightAction(p){
- showPrivate(p,"夜の行動",`${p.role} の行動を選択`);
- render(true,p);
-}
+function privateOK(){privateBox.classList.add("hidden");next();}
+function next(){queue.length&&queue.shift()();}
 
 /* ===== 表示 ===== */
-function render(select=false,actor=null){
+function render(select){
  playersDiv.innerHTML="";
  players.forEach(p=>{
   let d=document.createElement("div");
   d.className="player"+(!p.alive?" dead":"");
   d.textContent=p.name;
-  if(select&&p.alive&&(p!==actor)){
+  if(select&&p.alive){
    d.onclick=()=>{
-    document.querySelectorAll(".select").forEach(e=>e.classList.remove("select"));
+    document.querySelectorAll(".select").forEach(x=>x.classList.remove("select"));
     d.classList.add("select");
     selected=p.id;
-    if(actor)night[actor.id]=p.id;
    };
   }
   playersDiv.appendChild(d);
  });
 }
 
-/* ===== 決定 ===== */
-function confirm(){
- if(phase==="昼"){
-  if(selected==null)return;
-  players[selected].alive=false;
-  checkWin()||startNight();
- }else resolveNight();
+/* ===== 昼（多数決） ===== */
+function startDay(){
+ phase="昼";votes={};
+ game.classList.remove("hidden");
+ phaseEl.textContent="昼（多数決投票）";
+ info.textContent="処刑する人を選択";
+ selected=null;render(true);
+ startTimer();
 }
 
-/* ===== 夜結果 ===== */
-function resolveNight(){
- let wolfTarget=null;
- players.forEach(p=>{
-  if(p.role==="人狼")wolfTarget=night[p.id];
-  if(p.role==="騎士")protectedId=night[p.id];
- });
- if(wolfTarget!=null&&wolfTarget!==protectedId){
-  let t=players[wolfTarget];
-  if(t.role==="踊り子"&&!t.used)t.used=true;
-  else if(t.role!=="妖狐")t.alive=false;
+function startTimer(){
+ clearInterval(dayTimer);
+ remain=+dayLimit.value;
+ timer.textContent=`残り ${remain} 秒`;
+ dayTimer=setInterval(()=>{
+  remain--;
+  timer.textContent=`残り ${remain} 秒`;
+  if(remain<=0){
+   clearInterval(dayTimer);
+   finishVote();
+  }
+ },1000);
+}
+
+function confirm(){
+ if(selected==null)return;
+ votes[selected]=(votes[selected]||0)+1;
+ selected=null;
+ document.querySelectorAll(".select").forEach(x=>x.classList.remove("select"));
+}
+
+function finishVote(){
+ let entries=Object.entries(votes);
+ if(entries.length===0){
+  let alive=players.filter(p=>p.alive);
+  entries=[[alive[Math.floor(Math.random()*alive.length)].id,1]];
  }
- nextQueue();
+ let max=Math.max(...entries.map(e=>e[1]));
+ let targets=entries.filter(e=>e[1]===max).map(e=>+e[0]);
+ let kill=targets[Math.floor(Math.random()*targets.length)];
+ players[kill].alive=false;
+ lastExecuted=kill;
+ checkWin()||startNight();
+}
+
+/* ===== 夜 ===== */
+function startNight(){
+ clearInterval(dayTimer);timer.textContent="";
+ phase="夜";night={};queue=[];
+ players.filter(p=>p.alive&&["人狼","占い師","霊能者","騎士"].includes(p.role))
+  .forEach(p=>queue.push(()=>nightAct(p)));
+ queue.push(resolveNight);
+ next();
+}
+
+function nightAct(p){
+ if(p.role==="霊能者"){
+  let txt=lastExecuted!=null
+   ? `${players[lastExecuted].name} は 【${players[lastExecuted].role}】でした`
+   : "今回判定できる死者はいません";
+  showPrivate(p,"霊能結果",txt);
+ }else{
+  showPrivate(p,"夜の行動",`${p.role}：対象を選択`);
+  actor=p;selected=null;render(true);
+ }
+}
+
+/* ===== 夜解決 ===== */
+function resolveNight(){
+ let protect=null,seerInfo=null,seerPlayer=null;
+
+ if(night["騎士"])protect=Object.values(night["騎士"])[0];
+
+ if(night["占い師"]){
+  let id=Object.values(night["占い師"])[0];
+  let t=players[id];
+  seerInfo=`${t.name} は 【${t.role}】です`;
+  seerPlayer=players.find(p=>p.role==="占い師");
+  if(t.role==="妖狐")t.alive=false;
+ }
+
+ if(night["人狼"]){
+  let votes=Object.values(night["人狼"]);
+  let count={};
+  votes.forEach(v=>count[v]=(count[v]||0)+1);
+  let max=Math.max(...Object.values(count));
+  let targets=Object.keys(count).filter(k=>count[k]===max);
+  let kill=+targets[Math.floor(Math.random()*targets.length)];
+  if(kill!==protect){
+   let t=players[kill];
+   if(t.role==="踊り子"&&!t.used)t.used=true;
+   else if(t.role!=="妖狐")t.alive=false;
+  }
+ }
+
+ if(seerInfo){
+  queue.unshift(()=>showPrivate(seerPlayer,"占い結果",seerInfo));
+ }
+
+ checkWin()||startDay();
 }
 
 /* ===== 勝利 ===== */
 function checkWin(){
  let alive=players.filter(p=>p.alive);
- let wolves=alive.filter(p=>p.role==="人狼").length;
- let villagers=alive.filter(p=>!["人狼","妖狐"].includes(p.role)).length;
- let fox=alive.some(p=>p.role==="妖狐");
- if(fox&&wolves===0&&villagers===0)return win("🦊 妖狐の勝利");
- if(wolves===0)return win("🎉 村人陣営の勝利");
- if(wolves>=villagers)return win("🐺 人狼陣営の勝利");
+ let w=alive.filter(p=>p.role==="人狼").length;
+ let v=alive.filter(p=>!["人狼","妖狐"].includes(p.role)).length;
+ let f=alive.some(p=>p.role==="妖狐");
+ if(f&&w===0&&v===0)return win("🦊 妖狐の勝利");
+ if(w===0)return win("🎉 村人陣営の勝利");
+ if(w>=v)return win("🐺 人狼陣営の勝利");
  return false;
 }
 function win(t){
