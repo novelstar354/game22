@@ -33,7 +33,9 @@ input{font-size:16px;padding:6px;border-radius:6px;border:none}
 🛡<input id="knight" type="number" value="1">
 💃<input id="dancer" type="number" value="1"><br>
 
-<label><input type="checkbox" id="adv" onchange="advBox.classList.toggle('hidden',!this.checked);updateVillagers()">上級役職ON</label>
+<label><input type="checkbox" id="adv"
+ onchange="advBox.classList.toggle('hidden',!this.checked);updateVillagers()">
+上級役職ON</label>
 <div id="advBox" class="hidden">🦊<input id="fox" type="number" value="0"></div>
 
 <h3>プレイヤー名</h3>
@@ -129,7 +131,10 @@ function showPrivate(p,t,c){
   actor=p;
  });
 }
-function privateOK(){privateBox.classList.add("hidden");next();}
+function privateOK(){
+ privateBox.classList.add("hidden");
+ if(actor.role==="霊能者") next();
+}
 function next(){queue.length&&queue.shift()();}
 
 /* 表示 */
@@ -170,21 +175,25 @@ function startTimer(){
   if(remain<=0){clearInterval(dayTimer);finishVote();}
  },1000);
 }
+
+/* 決定 */
 function confirm(){
  if(selected==null)return;
 
  if(phase==="昼"){
   votes[selected]=(votes[selected]||0)+1;
   clearInterval(dayTimer);
-  finishVote(); // ★必ず処刑
- }else{
-  night[actor.role]??={};
+  finishVote();
+ }else if(phase==="夜"){
+  night[actor.role] ??= {};
   night[actor.role][actor.id]=selected;
+  selected=null;
+  document.querySelectorAll(".select").forEach(x=>x.classList.remove("select"));
   next();
  }
- selected=null;
- document.querySelectorAll(".select").forEach(x=>x.classList.remove("select"));
 }
+
+/* 処刑 */
 function finishVote(){
  let e=Object.entries(votes);
  if(!e.length){
@@ -205,15 +214,22 @@ function startNight(){
  phase="夜";night={};queue=[];
  players.filter(p=>p.alive&&["人狼","占い師","霊能者","騎士"].includes(p.role))
   .forEach(p=>queue.push(()=>nightAct(p)));
- queue.push(resolveNight);next();
+ queue.push(resolveNight);
+ next();
 }
 function nightAct(p){
+ actor=p;
  if(p.role==="霊能者"){
-  let txt=lastExecuted!=null?`${players[lastExecuted].name} は【${players[lastExecuted].role}】`:"判定なし";
+  let txt=lastExecuted!=null
+   ? `${players[lastExecuted].name} は【${players[lastExecuted].role}】`
+   : "判定なし";
   showPrivate(p,"霊能結果",txt);
  }else{
-  showPrivate(p,"夜の行動",`${p.role}：対象を選択`);
-  selected=null;render(true);
+  game.classList.remove("hidden");
+  phaseEl.textContent="夜";
+  info.textContent=`${p.role}：対象を選択`;
+  selected=null;
+  render(true);
  }
 }
 
@@ -225,7 +241,10 @@ function resolveNight(){
   let id=Object.values(night["占い師"])[0];
   let t=players[id];
   if(t.role==="妖狐")t.alive=false;
-  queue.unshift(()=>showPrivate(players.find(p=>p.role==="占い師"),"占い結果",`${t.name} は【${t.role}】`));
+  queue.unshift(()=>showPrivate(
+   players.find(p=>p.role==="占い師"),
+   "占い結果",`${t.name} は【${t.role}】`
+  ));
  }
 
  if(night["人狼"]){
