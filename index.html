@@ -27,19 +27,19 @@ input{font-size:16px;padding:6px;border-radius:6px;border:none}
 人数<br><input id="pc" type="number" value="8" min="3"><br><br>
 昼の制限時間（秒）<br><input id="dayLimit" type="number" value="60"><br><br>
 
-🐺 <input id="wolf" type="number" value="1">
-🔮 <input id="seer" type="number" value="1">
-📿 <input id="medium" type="number" value="1">
-🛡 <input id="knight" type="number" value="1">
-💃 <input id="dancer" type="number" value="1"><br>
+🐺<input id="wolf" type="number" value="1">
+🔮<input id="seer" type="number" value="1">
+📿<input id="medium" type="number" value="1">
+🛡<input id="knight" type="number" value="1">
+💃<input id="dancer" type="number" value="1"><br>
 
 <label><input type="checkbox" id="adv" onchange="advBox.classList.toggle('hidden',!this.checked);updateVillagers()">上級役職ON</label>
-<div id="advBox" class="hidden">🦊 <input id="fox" type="number" value="0"></div>
+<div id="advBox" class="hidden">🦊<input id="fox" type="number" value="0"></div>
 
-<h3>名前</h3>
+<h3>プレイヤー名</h3>
 <div id="nameInputs"></div>
 <div id="villagerCount"></div>
-<div id="warn" class="warning hidden">⚠ 役職数超過</div>
+<div id="warn" class="warning hidden">⚠ 役職数が人数を超えています</div>
 <button id="startBtn" onclick="start()">開始</button>
 </div>
 
@@ -71,8 +71,10 @@ input{font-size:16px;padding:6px;border-radius:6px;border:none}
 <script>
 const $=id=>document.getElementById(id);
 const playersDiv=$("players");
+
 let players=[],queue=[],phase="",night={},votes={},selected=null,actor=null;
 let remain=0,dayTimer=null,lastExecuted=null;
+let dayVotesCount=0;
 
 /* 名前 */
 function updateNames(){
@@ -80,6 +82,7 @@ function updateNames(){
  for(let i=0;i<pc.value;i++){
   let inp=document.createElement("input");
   inp.placeholder="P"+(i+1);
+  inp.style.margin="4px";
   nameInputs.appendChild(inp);
  }
 }
@@ -140,7 +143,8 @@ function render(sel){
   if(sel&&p.alive){
    d.onclick=()=>{
     document.querySelectorAll(".select").forEach(x=>x.classList.remove("select"));
-    d.classList.add("select");selected=p.id;
+    d.classList.add("select");
+    selected=p.id;
    };
   }
   playersDiv.appendChild(d);
@@ -149,11 +153,14 @@ function render(sel){
 
 /* 昼 */
 function startDay(){
- phase="昼";votes={};
+ phase="昼";
+ votes={};
+ dayVotesCount=0;
  game.classList.remove("hidden");
- phaseEl.textContent="昼（投票）";
- info.textContent="処刑対象を選択";
- selected=null;render(true);
+ phaseEl.textContent="昼（多数決投票）";
+ info.textContent="処刑する人を選択";
+ selected=null;
+ render(true);
  startTimer();
 }
 function startTimer(){
@@ -166,17 +173,22 @@ function startTimer(){
  },1000);
 }
 function confirm(){
- if(selected==null)return;
+ if(selected==null) return;
 
  if(phase==="昼"){
   votes[selected]=(votes[selected]||0)+1;
+  dayVotesCount++;
+  if(dayVotesCount>=players.filter(p=>p.alive).length){
+   clearInterval(dayTimer);
+   finishVote();
+  }
  }else{
   night[actor.role]??={};
   night[actor.role][actor.id]=selected;
+  next();
  }
  selected=null;
  document.querySelectorAll(".select").forEach(x=>x.classList.remove("select"));
- next();
 }
 function finishVote(){
  let e=Object.entries(votes);
@@ -213,12 +225,14 @@ function nightAct(p){
 /* 夜解決 */
 function resolveNight(){
  let protect=night["騎士"]&&Object.values(night["騎士"])[0];
+
  if(night["占い師"]){
   let id=Object.values(night["占い師"])[0];
   let t=players[id];
   if(t.role==="妖狐")t.alive=false;
   queue.unshift(()=>showPrivate(players.find(p=>p.role==="占い師"),"占い結果",`${t.name} は【${t.role}】`));
  }
+
  if(night["人狼"]){
   let v=Object.values(night["人狼"]),c={};
   v.forEach(x=>c[x]=(c[x]||0)+1);
@@ -230,6 +244,7 @@ function resolveNight(){
    else if(t.role!=="妖狐")t.alive=false;
   }
  }
+
  checkWin()||startDay();
 }
 
@@ -239,9 +254,9 @@ function checkWin(){
  let w=a.filter(p=>p.role==="人狼").length;
  let v=a.filter(p=>!["人狼","妖狐"].includes(p.role)).length;
  let f=a.some(p=>p.role==="妖狐");
- if(f&&w===0&&v===0)return win("🦊 妖狐勝利");
- if(w===0)return win("🎉 村人勝利");
- if(w>=v)return win("🐺 人狼勝利");
+ if(f&&w===0&&v===0)return win("🦊 妖狐の勝利");
+ if(w===0)return win("🎉 村人陣営の勝利");
+ if(w>=v)return win("🐺 人狼陣営の勝利");
 }
 function win(t){
  game.classList.add("hidden");
