@@ -6,138 +6,231 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body{margin:0;background:#0f172a;color:#fff;font-family:sans-serif;text-align:center}
-.card{background:#1e293b;margin:10px auto;padding:15px;border-radius:14px;max-width:420px}
+.card{background:#1e293b;margin:10px auto;padding:15px;border-radius:12px;max-width:480px}
+button,select,input{font-size:16px;padding:8px;margin:5px}
 .hidden{display:none}
-button{width:90%;max-width:300px;padding:14px;font-size:17px;border:none;border-radius:14px;background:#22c55e;color:#000;margin:8px auto}
-button:disabled{background:#475569;color:#aaa}
-input{font-size:16px;padding:6px;border-radius:6px;border:none}
-.player{background:#334155;margin:6px auto;padding:10px;border-radius:10px;max-width:300px}
-.dead{opacity:.4;text-decoration:line-through}
-.select{outline:3px solid #22c55e}
-.warning{color:#f87171;font-weight:bold}
-.timer{font-size:22px;font-weight:bold;color:#facc15}
+.timer{font-size:20px;color:#38bdf8}
+.pauseBtn{background:#334155;color:#fff;border:none;border-radius:8px}
+label{display:block;margin-top:5px}
 </style>
 </head>
 <body>
 
 <h1>🐺 人狼ゲーム</h1>
+<div class="timer" id="timer"></div>
+<button class="pauseBtn" onclick="togglePause()" id="pauseBtn">⏸ 一時停止</button>
 
 <div id="setup" class="card">
-<h2>設定</h2>
-人数<br><input id="pc" type="number" value="8" min="3"><br><br>
-昼の制限時間（秒）<br><input id="dayLimit" type="number" value="60"><br><br>
+  <h2>ゲーム設定</h2>
 
-🐺<input id="wolf" type="number" value="1">
-🔮<input id="seer" type="number" value="1">
-📿<input id="medium" type="number" value="1">
-🛡<input id="knight" type="number" value="1">
-💃<input id="dancer" type="number" value="1"><br>
+  <label>夜の制限時間（秒）</label>
+  <input type="number" id="nightInput" value="30" min="5">
 
-<label><input type="checkbox" id="adv"
- onchange="advBox.classList.toggle('hidden',!this.checked);updateVillagers()">
-上級役職ON</label>
-<div id="advBox" class="hidden">🦊<input id="fox" type="number" value="0"></div>
+  <label>昼の制限時間（秒）</label>
+  <input type="number" id="dayInput" value="60" min="5">
 
-<h3>プレイヤー名</h3>
-<div id="nameInputs"></div>
-<div id="villagerCount"></div>
-<div id="warn" class="warning hidden">⚠ 役職数が人数を超えています</div>
-<button id="startBtn" onclick="start()">開始</button>
+  <hr>
+
+  <label>プレイヤー人数</label>
+  <input type="number" id="count" min="3" value="5">
+  <button onclick="makeNames()">名前入力</button>
+  <div id="names"></div>
+
+  <button onclick="start()">ゲーム開始</button>
 </div>
 
-<div id="confirmBox" class="card hidden">
-<h2 id="confirmText"></h2>
-<button onclick="confirmYes()">はい</button>
-<button onclick="alert('正しい人に渡してください')">いいえ</button>
+<div id="confirm" class="card hidden">
+  <h2 id="cname"></h2>
+  <button onclick="showRole()">私はこの人です</button>
 </div>
 
-<div id="privateBox" class="card hidden">
-<h2 id="privateTitle"></h2>
-<p id="privateContent"></p>
-<button onclick="privateOK()">OK</button>
+<div id="role" class="card hidden">
+  <h2 id="rname"></h2>
+  <p id="rtext"></p>
+  <button onclick="nextRole()">次へ</button>
 </div>
 
-<div id="game" class="card hidden">
-<h2 id="phaseEl"></h2>
-<div class="timer" id="timer"></div>
-<p id="info"></p>
-<div id="players"></div>
-<button onclick="confirm()">決定</button>
+<div id="action" class="card hidden">
+  <h2 id="atitle"></h2>
+  <select id="aselect"></select><br>
+  <button onclick="doAction()">決定</button>
+</div>
+
+<div id="vote" class="card hidden">
+  <h2>昼の投票</h2>
+  <select id="vselect"></select><br>
+  <button onclick="doVote()">投票</button>
 </div>
 
 <div id="result" class="card hidden">
-<h2 id="resultText"></h2>
-<button onclick="location.reload()">役職選択に戻る</button>
+  <h2 id="resultText"></h2>
+  <button onclick="location.reload()">最初に戻る</button>
 </div>
 
 <script>
-const $=id=>document.getElementById(id);
-const playersDiv=$("players");
+/* ==== 制限時間（可変） ==== */
+let NIGHT_TIME = 30;
+let DAY_TIME = 60;
 
-let players=[],queue=[],phase="",night={},votes={},selected=null,actor=null;
-let remain=0,dayTimer=null,lastExecuted=null;
+/* ==== タイマー ==== */
+let timerInt,timeLeft,isPaused=false,timeoutFunc=null;
 
-/* 名前 */
-function updateNames(){
- nameInputs.innerHTML="";
- for(let i=0;i<pc.value;i++){
-  let inp=document.createElement("input");
-  inp.placeholder="P"+(i+1);
-  inp.style.margin="4px";
-  nameInputs.appendChild(inp);
- }
+function startTimer(sec,onEnd){
+  clearInterval(timerInt);
+  timeLeft=sec;
+  timeoutFunc=onEnd;
+  updateTimer();
+  timerInt=setInterval(()=>{
+    if(isPaused) return;
+    timeLeft--;
+    updateTimer();
+    if(timeLeft<=0){
+      clearInterval(timerInt);
+      timeoutFunc();
+    }
+  },1000);
 }
-pc.oninput=()=>{updateNames();updateVillagers();}
-updateNames();
 
-/* 村人計算 */
-function updateVillagers(){
- let used=+wolf.value+ +seer.value+ +medium.value+ +knight.value+ +dancer.value+(adv.checked?+fox.value:0);
- let v=pc.value-used;
- villagerCount.textContent=`👤 村人：${Math.max(0,v)} 人`;
- warn.classList.toggle("hidden",v>=0);
- startBtn.disabled=v<0;
+function updateTimer(){
+  timer.textContent=isPaused
+    ? `⏸ 一時停止中（残り ${timeLeft}s）`
+    : `残り時間：${timeLeft}s`;
 }
-document.querySelectorAll("#setup input").forEach(i=>i.oninput=updateVillagers);
-updateVillagers();
 
-/* 開始 */
+function togglePause(){
+  isPaused=!isPaused;
+  pauseBtn.textContent=isPaused?"▶ 再開":"⏸ 一時停止";
+  updateTimer();
+}
+
+/* ==== ゲーム変数 ==== */
+let players=[],roles=[],alive=[],usedDance=[];
+let idx=0,wolfVotes={},guard=null;
+
+/* ==== セットアップ ==== */
+function makeNames(){
+  names.innerHTML="";
+  for(let i=0;i<count.value;i++){
+    names.innerHTML+=`<input placeholder="プレイヤー${i+1}"><br>`;
+  }
+}
+
 function start(){
- let names=[...nameInputs.children].map((i,n)=>i.value||"P"+(n+1));
- let roles=[];
- const add=(id,r)=>{for(let i=0;i<$(id).value;i++)roles.push(r);}
- add("wolf","人狼");add("seer","占い師");add("medium","霊能者");
- add("knight","騎士");add("dancer","踊り子");
- if(adv.checked)add("fox","妖狐");
- while(roles.length<pc.value)roles.push("村人");
- roles.sort(()=>Math.random()-.5);
- players=roles.map((r,i)=>({id:i,name:names[i],role:r,alive:true,used:false}));
- setup.classList.add("hidden");
- queue=[...players.map(p=>()=>showPrivate(p,"あなたの役職",p.role)),startDay];
- next();
+  NIGHT_TIME = Math.max(5, Number(nightInput.value)||30);
+  DAY_TIME   = Math.max(5, Number(dayInput.value)||60);
+
+  players=[...names.querySelectorAll("input")].map((i,n)=>i.value||`プレイヤー${n+1}`);
+  roles=["人狼","占い師","狩人","霊能者","踊り子","妖狐"];
+  while(roles.length<players.length) roles.push("村人");
+  roles=roles.slice(0,players.length).sort(()=>Math.random()-0.5);
+
+  alive=Array(players.length).fill(true);
+  usedDance=Array(players.length).fill(false);
+
+  setup.classList.add("hidden");
+  confirm.classList.remove("hidden");
+  cname.textContent=players[idx];
 }
 
-/* 共通 */
-function showConfirm(t,yes){
- confirmText.textContent=t;
- confirmBox.classList.remove("hidden");
- confirmYes=()=>{confirmBox.classList.add("hidden");yes();};
+/* ==== 役職確認 ==== */
+function showRole(){
+  confirm.classList.add("hidden");
+  role.classList.remove("hidden");
+  rname.textContent=players[idx];
+  rtext.textContent="あなたの役職は【"+roles[idx]+"】です";
 }
-function showPrivate(p,t,c){
- showConfirm(`あなたは ${p.name} ですか？`,()=>{
-  privateTitle.textContent=t;
-  privateContent.textContent=c;
-  privateBox.classList.remove("hidden");
-  actor=p;
- });
-}
-function privateOK(){
- privateBox.classList.add("hidden");
- next(); // ★全員必ず次へ
-}
-function next(){queue.length&&queue.shift()();}
 
-/* 以下 昼・夜・勝利処理は前回と同一（省略なしで正常動作） */
+function nextRole(){
+  role.classList.add("hidden");
+  idx++;
+  if(idx<players.length){
+    confirm.classList.remove("hidden");
+    cname.textContent=players[idx];
+  }else startNight();
+}
+
+/* ==== 夜 ==== */
+function startNight(){
+  idx=0; wolfVotes={}; guard=null;
+  startTimer(NIGHT_TIME,resolveNight);
+  nextActor();
+}
+
+function nextActor(){
+  if(idx>=players.length) return;
+  if(!alive[idx]){ idx++; nextActor(); return; }
+  const r=roles[idx];
+  if(!["人狼","占い師","狩人"].includes(r)){ idx++; nextActor(); return; }
+  action.classList.remove("hidden");
+  atitle.textContent=r+"の行動";
+  aselect.innerHTML="";
+  alive.forEach((a,i)=>{ if(a&&i!==idx) aselect.innerHTML+=`<option value="${i}">${players[i]}</option>`; });
+}
+
+function doAction(){
+  if(isPaused) return;
+  const t=Number(aselect.value);
+  const r=roles[idx];
+  if(r==="人狼") wolfVotes[t]=(wolfVotes[t]||0)+1;
+  if(r==="占い師"){
+    if(roles[t]==="妖狐") alive[t]=false;
+    alert(players[t]+" は "+roles[t]);
+  }
+  if(r==="狩人") guard=t;
+  action.classList.add("hidden");
+  idx++; nextActor();
+}
+
+function resolveNight(){
+  action.classList.add("hidden");
+  let target=null,max=0;
+  for(const k in wolfVotes){ if(wolfVotes[k]>max){max=wolfVotes[k];target=k;} }
+  if(target!==null && target!=guard && roles[target]!=="妖狐"){
+    if(!(roles[target]==="踊り子"&&!usedDance[target])){
+      alive[target]=false;
+    }else usedDance[target]=true;
+  }
+  startDay();
+}
+
+/* ==== 昼 ==== */
+function startDay(){
+  startTimer(DAY_TIME,autoVote);
+  vote.classList.remove("hidden");
+  vselect.innerHTML="";
+  alive.forEach((a,i)=>{ if(a) vselect.innerHTML+=`<option value="${i}">${players[i]}</option>`; });
+}
+
+function doVote(){
+  if(isPaused) return;
+  clearInterval(timerInt);
+  executeVote(Number(vselect.value));
+}
+
+function autoVote(){
+  const list=alive.map((a,i)=>a?i:null).filter(i=>i!==null);
+  executeVote(list[Math.floor(Math.random()*list.length)]);
+}
+
+function executeVote(v){
+  alive[v]=false;
+  vote.classList.add("hidden");
+  checkWin();
+}
+
+/* ==== 勝利判定 ==== */
+function checkWin(){
+  clearInterval(timerInt);
+  const wolves=roles.filter((r,i)=>r==="人狼"&&alive[i]).length;
+  const humans=alive.filter((a,i)=>a&&roles[i]!=="人狼"&&roles[i]!=="妖狐").length;
+  const fox=roles.some((r,i)=>r==="妖狐"&&alive[i]);
+
+  result.classList.remove("hidden");
+  if(fox && wolves===0) resultText.textContent="🦊 妖狐の単独勝利！";
+  else if(wolves===0) resultText.textContent="🎉 村人陣営の勝利！";
+  else if(wolves>=humans) resultText.textContent="🐺 人狼陣営の勝利！";
+  else resultText.textContent="ゲーム続行（デモ版終了）";
+}
 </script>
 </body>
 </html>
