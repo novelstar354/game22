@@ -11,7 +11,6 @@ button,select,input{font-size:16px;padding:8px;margin:5px}
 .hidden{display:none}
 .timer{font-size:20px;color:#38bdf8}
 .pauseBtn{background:#334155;color:#fff;border:none;border-radius:8px}
-label{display:block;margin-top:5px}
 </style>
 </head>
 <body>
@@ -23,15 +22,13 @@ label{display:block;margin-top:5px}
 <div id="setup" class="card">
   <h2>ゲーム設定</h2>
 
-  <label>夜の制限時間（秒）</label>
-  <input type="number" id="nightInput" value="30" min="5">
+  夜の制限時間（秒）
+  <input type="number" id="nightInput" value="30" min="5"><br>
 
-  <label>昼の制限時間（秒）</label>
-  <input type="number" id="dayInput" value="60" min="5">
+  昼の制限時間（秒）
+  <input type="number" id="dayInput" value="60" min="5"><br><hr>
 
-  <hr>
-
-  <label>プレイヤー人数</label>
+  プレイヤー人数
   <input type="number" id="count" min="3" value="5">
   <button onclick="makeNames()">名前入力</button>
   <div id="names"></div>
@@ -50,62 +47,29 @@ label{display:block;margin-top:5px}
   <button onclick="nextRole()">次へ</button>
 </div>
 
-<div id="action" class="card hidden">
-  <h2 id="atitle"></h2>
-  <select id="aselect"></select><br>
-  <button onclick="doAction()">決定</button>
-</div>
-
-<div id="vote" class="card hidden">
-  <h2>昼の投票</h2>
-  <select id="vselect"></select><br>
-  <button onclick="doVote()">投票</button>
-</div>
-
-<div id="result" class="card hidden">
-  <h2 id="resultText"></h2>
-  <button onclick="location.reload()">最初に戻る</button>
-</div>
-
 <script>
-/* ==== 制限時間（可変） ==== */
-let NIGHT_TIME = 30;
-let DAY_TIME = 60;
+let NIGHT_TIME=30,DAY_TIME=60;
+let timerInt,timeLeft,isPaused=false;
+
+let players=[],roles=[],alive=[],usedDance=[];
+let idx=0;
 
 /* ==== タイマー ==== */
-let timerInt,timeLeft,isPaused=false,timeoutFunc=null;
-
-function startTimer(sec,onEnd){
+function startTimer(sec){
   clearInterval(timerInt);
   timeLeft=sec;
-  timeoutFunc=onEnd;
-  updateTimer();
+  timer.textContent=`残り時間：${timeLeft}s`;
   timerInt=setInterval(()=>{
     if(isPaused) return;
     timeLeft--;
-    updateTimer();
-    if(timeLeft<=0){
-      clearInterval(timerInt);
-      timeoutFunc();
-    }
+    timer.textContent=`残り時間：${timeLeft}s`;
+    if(timeLeft<=0) clearInterval(timerInt);
   },1000);
 }
-
-function updateTimer(){
-  timer.textContent=isPaused
-    ? `⏸ 一時停止中（残り ${timeLeft}s）`
-    : `残り時間：${timeLeft}s`;
-}
-
 function togglePause(){
   isPaused=!isPaused;
   pauseBtn.textContent=isPaused?"▶ 再開":"⏸ 一時停止";
-  updateTimer();
 }
-
-/* ==== ゲーム変数 ==== */
-let players=[],roles=[],alive=[],usedDance=[];
-let idx=0,wolfVotes={},guard=null;
 
 /* ==== セットアップ ==== */
 function makeNames(){
@@ -116,10 +80,19 @@ function makeNames(){
 }
 
 function start(){
-  NIGHT_TIME = Math.max(5, Number(nightInput.value)||30);
-  DAY_TIME   = Math.max(5, Number(dayInput.value)||60);
+  idx=0; // ← ★重要：必ずリセット
 
-  players=[...names.querySelectorAll("input")].map((i,n)=>i.value||`プレイヤー${n+1}`);
+  NIGHT_TIME=Math.max(5,Number(nightInput.value)||30);
+  DAY_TIME=Math.max(5,Number(dayInput.value)||60);
+
+  const inputs=[...names.querySelectorAll("input")];
+  if(inputs.length < count.value){
+    alert("先に『名前入力』を押してください");
+    return;
+  }
+
+  players=inputs.map((i,n)=>i.value||`プレイヤー${n+1}`);
+
   roles=["人狼","占い師","狩人","霊能者","踊り子","妖狐"];
   while(roles.length<players.length) roles.push("村人");
   roles=roles.slice(0,players.length).sort(()=>Math.random()-0.5);
@@ -146,90 +119,9 @@ function nextRole(){
   if(idx<players.length){
     confirm.classList.remove("hidden");
     cname.textContent=players[idx];
-  }else startNight();
-}
-
-/* ==== 夜 ==== */
-function startNight(){
-  idx=0; wolfVotes={}; guard=null;
-  startTimer(NIGHT_TIME,resolveNight);
-  nextActor();
-}
-
-function nextActor(){
-  if(idx>=players.length) return;
-  if(!alive[idx]){ idx++; nextActor(); return; }
-  const r=roles[idx];
-  if(!["人狼","占い師","狩人"].includes(r)){ idx++; nextActor(); return; }
-  action.classList.remove("hidden");
-  atitle.textContent=r+"の行動";
-  aselect.innerHTML="";
-  alive.forEach((a,i)=>{ if(a&&i!==idx) aselect.innerHTML+=`<option value="${i}">${players[i]}</option>`; });
-}
-
-function doAction(){
-  if(isPaused) return;
-  const t=Number(aselect.value);
-  const r=roles[idx];
-  if(r==="人狼") wolfVotes[t]=(wolfVotes[t]||0)+1;
-  if(r==="占い師"){
-    if(roles[t]==="妖狐") alive[t]=false;
-    alert(players[t]+" は "+roles[t]);
+  }else{
+    alert("全員の役職確認が終わりました！");
   }
-  if(r==="狩人") guard=t;
-  action.classList.add("hidden");
-  idx++; nextActor();
-}
-
-function resolveNight(){
-  action.classList.add("hidden");
-  let target=null,max=0;
-  for(const k in wolfVotes){ if(wolfVotes[k]>max){max=wolfVotes[k];target=k;} }
-  if(target!==null && target!=guard && roles[target]!=="妖狐"){
-    if(!(roles[target]==="踊り子"&&!usedDance[target])){
-      alive[target]=false;
-    }else usedDance[target]=true;
-  }
-  startDay();
-}
-
-/* ==== 昼 ==== */
-function startDay(){
-  startTimer(DAY_TIME,autoVote);
-  vote.classList.remove("hidden");
-  vselect.innerHTML="";
-  alive.forEach((a,i)=>{ if(a) vselect.innerHTML+=`<option value="${i}">${players[i]}</option>`; });
-}
-
-function doVote(){
-  if(isPaused) return;
-  clearInterval(timerInt);
-  executeVote(Number(vselect.value));
-}
-
-function autoVote(){
-  const list=alive.map((a,i)=>a?i:null).filter(i=>i!==null);
-  executeVote(list[Math.floor(Math.random()*list.length)]);
-}
-
-function executeVote(v){
-  alive[v]=false;
-  vote.classList.add("hidden");
-  checkWin();
-}
-
-/* ==== 勝利判定 ==== */
-function checkWin(){
-  clearInterval(timerInt);
-  const wolves=roles.filter((r,i)=>r==="人狼"&&alive[i]).length;
-  const humans=alive.filter((a,i)=>a&&roles[i]!=="人狼"&&roles[i]!=="妖狐").length;
-  const fox=roles.some((r,i)=>r==="妖狐"&&alive[i]);
-
-  result.classList.remove("hidden");
-  if(fox && wolves===0) resultText.textContent="🦊 妖狐の単独勝利！";
-  else if(wolves===0) resultText.textContent="🎉 村人陣営の勝利！";
-  else if(wolves>=humans) resultText.textContent="🐺 人狼陣営の勝利！";
-  else resultText.textContent="ゲーム続行（デモ版終了）";
 }
 </script>
 </body>
